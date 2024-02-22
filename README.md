@@ -1,0 +1,1 @@
+In this project, I extracted data from an XML document and then stored the data relationally in a SQLite database. That database represents a "transactional" database. Then I extracted data from the transactional database and created an "analytical" database using a star schema in MySQL. Finally, I queried facts from the MySQL analytical database. 
