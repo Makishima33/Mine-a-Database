@@ -1,0 +1,125 @@
+---
+title: "AnalyzData"
+date: 12/05/2023
+output:
+  html_document:
+    df_print: paged
+The report will focus on three analytical questions -> sales representatives' performance
+break down by years and quarters, yearly revenue by regions, and quarterly revenue break down by years.
+---
+## Connect to databases
+```{r Connect to dbs}
+library(RSQLite)
+library(RMySQL)
+library(DBI)
+# Info for connecting to remote mysql database
+db_name_fh <- "sql12667348"
+db_user_fh <- "sql12667348"
+db_host_fh <- "sql12.freemysqlhosting.net"
+db_pwd_fh <- "tGigDY6BtE"
+db_port_fh <- 3306
+
+# Connect to MySQL server database
+mydb.fh <-  dbConnect(RMySQL::MySQL(), user = db_user_fh, password = db_pwd_fh,
+                      dbname = db_name_fh, host = db_host_fh, port = db_port_fh)
+mydb <- mydb.fh
+
+# Connect to SQLite database
+dbcon <- dbConnect(RSQLite::SQLite(), dbname = "sqlDB")
+```
+
+## Analytical Query I: Top five sales reps with the most sales broken down by year.
+```{sql Retrieve top five sales reps with most sales broken down by year, connection=mydb}
+SELECT 
+    year, 
+    rep_rank,
+    rep_name, 
+    total_sales
+FROM 
+    -- Nested Subquery
+    (SELECT 
+         year, 
+         rep_name, 
+         total_sales,
+         -- Increments the rank if the current row is in the same year as the previous row (@current_year = year),              otherwise resets it to 1 for a new year.
+         @rep_rank := IF(@current_year = year, @rep_rank + 1, 1) AS rep_rank,
+         -- Updates the @current_year variable to the current row's year for comparison in the next row
+         @current_year := year
+     FROM 
+         -- Sub-Subquery
+         -- Calculates the total sales (total_sales) for each sales representative (rep_name) for each year.
+         (SELECT 
+              year, 
+              rep_name, 
+              SUM(total_sales) AS total_sales
+          FROM 
+              rep_facts
+          GROUP BY 
+              year, rep_name
+          ORDER BY 
+              year, total_sales DESC) AS yearly_sales,
+         
+         -- Initializes the user-defined variables @rep_rank and @current_year
+         -- before they are used in the ranking subquery
+         (SELECT @rep_rank := 0, @current_year := '') AS r
+    ) AS ranked_reps
+WHERE 
+    rep_rank <= 5
+ORDER BY 
+    year, rep_rank
+```
+## Analytical Query II: Total sold per year per region.
+```{sql Retrieve total sold per year per region, connection=mydb}
+SELECT 
+    region, 
+    year, 
+    SUM(total_sales) AS total_sales
+FROM 
+    sales_facts
+GROUP BY 
+    region, year
+ORDER BY 
+    year, region
+```
+## Analytical Query III: Total sold per quarter per year. Show the result in a line graph visualization.
+```{sql Retrieve , connection=mydb}
+SELECT 
+    year, 
+    quarter, 
+    SUM(total_sales) AS total_sales
+FROM 
+    sales_facts
+GROUP BY 
+    year, quarter
+ORDER BY 
+    year, quarter
+```
+## Visualization
+```{r}
+library(ggplot2)
+query_total_sales_quarter <- "
+SELECT 
+    year, 
+    quarter, 
+    SUM(total_sales) AS total_sales
+FROM 
+    sales_facts
+GROUP BY 
+    year, quarter
+ORDER BY 
+    year, quarter
+"
+total_sales_quarter <- dbGetQuery(mydb, query_total_sales_quarter)
+library(ggplot2)
+
+ggplot(total_sales_quarter, aes(x = quarter, y = total_sales, group = year, color = as.factor(year))) +
+    geom_line() +
+    labs(title = "Total Sales per Quarter per Year", x = "Quarter", y = "Total Sales", color = "Year") +
+    theme_minimal()
+```
+
+## Disconnect from dbs
+```{r}
+dbDisconnect(mydb)
+dbDisconnect(dbcon)
+```
